@@ -1,0 +1,88 @@
+name: Evaluate CNCF Project OTel Maturity
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_url:
+        description: 'CNCF project GitHub URL (e.g. https://github.com/jaegertracing/jaeger)'
+        required: true
+        type: string
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Evaluation setup ─────────────────────────────────────────────────
+
+      - name: Derive project name and prepare output directory
+        run: |
+          PROJECT_NAME=$(basename "${{ github.event.inputs.project_url }}")
+          echo "PROJECT_NAME=${PROJECT_NAME}" >> "$GITHUB_ENV"
+          # Pre-create the host mount so kind can bind-mount it
+          mkdir -p "/tmp/otel-eval-${PROJECT_NAME}"
+
+      # ── Start otel-score ─────────────────────────────────────────────────
+      # The container ships with kind, kubectl, helm, jq, and the Docker CLI.
+      # The Docker socket is mounted so kind can create clusters on the host daemon.
+      # /tmp is shared so the OTel Collector can write JSONL files the container
+      # can later read back for evaluation.
+
+      - name: Start otel-score
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          docker run -d --name otel-score \
+            -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /tmp:/tmp \
+            -p 8080:8080 \
+            ghcr.io/${{ github.repository }}:latest
+
+      - name: Wait for otel-score to be ready
+        run: |
+          echo "Waiting for otel-score on port 8080..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://localhost:8080/; then
+              echo "Ready (attempt ${i})"
+              exit 0
+            fi
+            echo "  ${i}/30 — sleeping 3s"
+            sleep 3
+          done
+          echo "otel-score did not start within 90s"
+          docker logs otel-score
+          exit 1
+
+      # ── Trigger evaluation ───────────────────────────────────────────────
+
+      - name: Run evaluation
+        run: |
+          echo "Evaluating: ${{ github.event.inputs.project_url }}"
+          curl -fsSL -X POST http://localhost:8080/api/chat \
+            -H "Content-Type: application/json" \
+            -d "{\"message\": \"Evaluate ${{ github.event.inputs.project_url }}\"}" \
+            --max-time 3600 \
+            -o evaluation-response.txt
+          echo "--- Agent response ---"
+          cat evaluation-response.txt
+
+      # ── Artifacts ────────────────────────────────────────────────────────
+
+      - name: Upload evaluation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: otel-evaluation-${{ env.PROJECT_NAME }}
+          path: |
+            evaluation-response.txt
+            /tmp/otel-eval-${{ env.PROJECT_NAME }}/
+          if-no-files-found: warn
+
+      - name: Print otel-score logs on failure
+        if: failure()
+        run: docker logs otel-score

@@ -131,6 +131,12 @@ jobs:
           echo "PR creation failed — retrying with git + gh cli"
           cd "$GITHUB_WORKSPACE"
           git checkout -B "results/${{ env.PROJECT_NAME }}"
+
+          # Re-copy the report (the failed action may have left the worktree dirty)
+          mkdir -p "results/${{ env.PROJECT_NAME }}"
+          cp ".otel-eval/${{ env.PROJECT_NAME }}/report.html" \
+             "results/${{ env.PROJECT_NAME }}/report.html"
+
           git add "results/${{ env.PROJECT_NAME }}/report.html"
           git -c user.name="github-actions[bot]" \
               -c user.email="github-actions[bot]@users.noreply.github.com" \

@@ -83,14 +83,11 @@ jobs:
       - name: Run evaluation
         run: |
           echo "Evaluating: ${{ github.event.inputs.project_url }}"
-          curl -fsSL -X POST http://localhost:8080/api/chat \
+          curl -fN -X POST http://localhost:8080/api/chat \
             -H "Content-Type: application/json" \
             -H "Accept: text/event-stream" \
             -d "{\"conversationId\": \"eval-${{ env.PROJECT_NAME }}\", \"clusterName\": \"otel-eval-${{ env.PROJECT_NAME }}\", \"message\": \"The kind cluster otel-eval-${{ env.PROJECT_NAME }} is already running with the OTel Collector and test backend deployed. Go straight to install CNCF project ${{ github.event.inputs.project_url }}, evaluate its OTel maturity, and generate the report.\"}" \
-            --max-time 7200 \
-            -o evaluation-response.txt
-          echo "--- Agent response ---"
-          cat evaluation-response.txt
+            --max-time 7200 | tee evaluation-response.txt
 
       # ── Artifacts ────────────────────────────────────────────────────────
 

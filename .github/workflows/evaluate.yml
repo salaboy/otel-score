@@ -122,6 +122,44 @@ jobs:
 
             Triggered by @${{ github.actor }} via workflow dispatch.
           add-paths: results/${{ env.PROJECT_NAME }}/report.html
+        env:
+          GIT_PUSH_RETRY: "3"
+
+      - name: Retry PR on transient failure
+        if: failure()
+        run: |
+          echo "PR creation failed — retrying with git + gh cli"
+          cd "$GITHUB_WORKSPACE"
+          git checkout -B "results/${{ env.PROJECT_NAME }}"
+          git add "results/${{ env.PROJECT_NAME }}/report.html"
+          git -c user.name="github-actions[bot]" \
+              -c user.email="github-actions[bot]@users.noreply.github.com" \
+              commit -m "results: add OTel maturity report for ${{ env.PROJECT_NAME }}" || true
+
+          for attempt in 1 2 3; do
+            echo "Push attempt ${attempt}/3..."
+            if git push -f origin "results/${{ env.PROJECT_NAME }}" 2>&1; then
+              break
+            fi
+            echo "Push failed — waiting 10s before retry"
+            sleep 10
+          done
+
+          # Create PR if it doesn't already exist
+          EXISTING=$(gh pr list --head "results/${{ env.PROJECT_NAME }}" --json number --jq '.[0].number' 2>/dev/null || true)
+          if [[ -z "$EXISTING" ]]; then
+            gh pr create \
+              --title "OTel maturity report: ${{ env.PROJECT_NAME }}" \
+              --body "Automated OTel maturity evaluation for [${{ env.PROJECT_NAME }}](${{ github.event.inputs.project_url }}).
+
+          Triggered by @${{ github.actor }} via workflow dispatch." \
+              --base main \
+              --head "results/${{ env.PROJECT_NAME }}"
+          else
+            echo "PR #${EXISTING} already exists"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Print otel-score logs on failure
         if: failure()

@@ -3,16 +3,16 @@ name: evaluate-otel-maturity
 description: Evaluate a CNCF project's OpenTelemetry support maturity by inspecting telemetry data, documentation, and source code. Produces a structured per-dimension assessment using the OpenTelemetry Support Maturity Model. Use after install-cncf-project has telemetry flowing.
 argument-hint: "<project-name>"
 allowed-tools:
-  - Bash
-  - Read
-  - Write
-  - Edit
-  - Grep
-  - Glob
-  - Agent
-  - AskUserQuestion
-  - WebFetch
-  - WebSearch
+   - Bash
+   - Read
+   - Write
+   - Edit
+   - Grep
+   - Glob
+   - Agent
+   - AskUserQuestion
+   - WebFetch
+   - WebSearch
 ---
 
 # Evaluate OpenTelemetry Support Maturity
@@ -20,6 +20,8 @@ allowed-tools:
 You evaluate a CNCF project's OpenTelemetry support using the **OpenTelemetry Support Maturity Model for CNCF Projects**. The full model specification, including detailed dimension descriptions and the evaluation checklist, is in `maturity-model-spec.md` in this skill's directory. **Read it before starting any evaluation.**
 
 Your evaluation must be thorough, evidence-based, and grounded in the actual telemetry data collected in the evaluation cluster. Always reference the latest stable OpenTelemetry semantic conventions when assessing attribute correctness.
+
+Report back the progress and any issues you encounter while installing the project.
 
 ## Context
 

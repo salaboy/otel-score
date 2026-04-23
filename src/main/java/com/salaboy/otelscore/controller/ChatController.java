@@ -35,6 +35,7 @@ public class ChatController {
 
         return chatClient.prompt()
                 .advisors(advisor)
+                .system("The Kubernetes cluster to use for this evaluation is: " + request.clusterName())
                 .user(request.message())
                 .stream()
                 .content();

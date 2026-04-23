@@ -1,8 +1,8 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-name: otel-eval-__PROJECT_NAME__
+name: otel-eval-jaeger
 nodes:
 - role: control-plane
   extraMounts:
-  - hostPath: /tmp/otel-eval-__PROJECT_NAME__
+  - hostPath: /tmp/otel-eval-jaeger
     containerPath: /tmp/otel

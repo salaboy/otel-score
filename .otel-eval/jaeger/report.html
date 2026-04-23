@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenTelemetry Maturity Report — Jaeger</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #f8f9fb;
+      color: #1a1d23;
+      line-height: 1.6;
+    }
+
+    /* ── Layout ── */
+    .page-header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #2563a8 100%);
+      color: #fff;
+      padding: 48px 40px 40px;
+    }
+    .page-header .badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+    .page-header h1 { font-size: 2.4rem; font-weight: 700; line-height: 1.2; }
+    .page-header h1 span { color: #60a5fa; }
+    .page-header .meta {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 14px;
+      color: rgba(255,255,255,0.75);
+    }
+    .page-header .meta strong { color: #fff; }
+    .page-header .desc {
+      margin-top: 18px;
+      font-size: 15px;
+      color: rgba(255,255,255,0.85);
+      max-width: 680px;
+      line-height: 1.65;
+    }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+    section { padding: 40px 0; }
+    section + section { border-top: 1px solid #e4e7ef; }
+
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 22px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    h2 .icon { font-size: 1.1rem; }
+
+    /* ── Radar chart ── */
+    .chart-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 32px;
+      align-items: center;
+    }
+    .chart-canvas-wrap {
+      flex: 0 0 420px;
+      max-width: 420px;
+    }
+    .chart-legend {
+      flex: 1;
+      min-width: 220px;
+    }
+    .chart-legend h3 { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .legend-levels { display: flex; flex-direction: column; gap: 8px; }
+    .legend-level {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+    }
+    .legend-dot {
+      width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+    }
+    .legend-dot.l0 { background: #e5e7eb; }
+    .legend-dot.l1 { background: #fbbf24; }
+    .legend-dot.l2 { background: #3b82f6; }
+    .legend-dot.l3 { background: #10b981; }
+
+    /* ── Summary table ── */
+    .summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .summary-table th {
+      background: #f1f5f9;
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      color: #475569;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .summary-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    .summary-table tr:hover td { background: #f8fafc; }
+    .level-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .level-badge.l0 { background: #f3f4f6; color: #6b7280; }
+    .level-badge.l1 { background: #fef3c7; color: #92400e; }
+    .level-badge.l2 { background: #dbeafe; color: #1e40af; }
+    .level-badge.l3 { background: #d1fae5; color: #065f46; }
+
+    /* ── Signal overview ── */
+    .signals-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .signal-card {
+      background: #fff;
+      border: 1px solid #e4e7ef;
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .signal-card .signal-icon { font-size: 1.6rem; }
+    .signal-card .signal-name { font-weight: 700; font-size: 15px; color: #0f172a; }
+    .signal-card .signal-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 10px;
+      width: fit-content;
+    }
+    .signal-status.flowing { background: #d1fae5; color: #065f46; }
+    .signal-status.partial { background: #fef3c7; color: #92400e; }
+    .signal-status.not-flowing { background: #fee2e2; color: #991b1b; }
+    .signal-card .signal-detail { font-size: 13px; color: #64748b; }
+
+    /* ── Dimension details ── */
+    .dim-section {
+      background: #fff;
+      border: 1px solid #e4e7ef;
+      border-radius: 14px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .dim-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 22px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .dim-header:hover { background: #f8fafc; }
+    .dim-number {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: #f1f5f9;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #475569;
+      flex-shrink: 0;
+    }
+    .dim-title { font-weight: 700; font-size: 16px; flex: 1; }
+    .dim-chevron { font-size: 12px; color: #94a3b8; transition: transform 0.2s; }
+    .dim-header.open .dim-chevron { transform: rotate(180deg); }
+
+    .dim-body {
+      display: none;
+      padding: 0 22px 22px;
+      border-top: 1px solid #f1f5f9;
+    }
+    .dim-body.open { display: block; }
+
+    .dim-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 18px;
+    }
+    @media (max-width: 680px) { .dim-grid { grid-template-columns: 1fr; } }
+
+    .dim-card {
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .dim-card h4 {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      margin-bottom: 10px;
+    }
+    .dim-card ul { padding-left: 16px; }
+    .dim-card li { font-size: 14px; color: #374151; margin-bottom: 6px; line-height: 1.5; }
+    .dim-card p { font-size: 14px; color: #374151; line-height: 1.6; }
+
+    .dim-card.working h4 { color: #065f46; }
+    .dim-card.working { background: #f0fdf4; border: 1px solid #bbf7d0; }
+    .dim-card.opportunity h4 { color: #92400e; }
+    .dim-card.opportunity { background: #fffbeb; border: 1px solid #fde68a; }
+    .dim-card.evidence { grid-column: 1 / -1; }
+
+    code {
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+      font-size: 12px;
+      background: #f1f5f9;
+      padding: 1px 5px;
+      border-radius: 4px;
+      color: #1e40af;
+    }
+
+    /* ── Key takeaways ── */
+    .takeaways-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .takeaway-card {
+      background: #fff;
+      border: 1px solid #e4e7ef;
+      border-radius: 12px;
+      padding: 22px;
+    }
+    .takeaway-card h3 {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .takeaway-card.strengths h3 { color: #065f46; }
+    .takeaway-card.improvements h3 { color: #92400e; }
+    .takeaway-card.notable h3 { color: #1e40af; }
+    .takeaway-card ul { padding-left: 16px; }
+    .takeaway-card li { font-size: 14px; color: #374151; margin-bottom: 8px; line-height: 1.5; }
+
+    /* ── Footer ── */
+    .page-footer {
+      background: #0f172a;
+      color: rgba(255,255,255,0.6);
+      padding: 28px 40px;
+      font-size: 13px;
+      text-align: center;
+      line-height: 1.7;
+    }
+    .page-footer a { color: #60a5fa; text-decoration: none; }
+    .page-footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="page-header">
+  <div class="container">
+    <div class="badge">OpenTelemetry Maturity Report</div>
+    <h1>Jaeger <span>v2.17.0</span></h1>
+    <div class="meta">
+      <span><strong>Evaluated:</strong> 2026-04-23</span>
+      <span><strong>Chart:</strong> jaegertracing/jaeger 4.7.0</span>
+      <span><strong>Cluster:</strong> otel-eval-jaeger (kind)</span>
+      <span><strong>Model:</strong> OTel Support Maturity Model for CNCF Projects</span>
+    </div>
+    <p class="desc">
+      Jaeger is a distributed tracing platform for monitoring and troubleshooting microservices,
+      originally developed at Uber and donated to CNCF. Jaeger v2 is a complete rewrite built
+      on top of the OpenTelemetry Collector framework — making it uniquely positioned as both
+      a first-class OTel citizen and a terminal trace backend.
+    </p>
+  </div>
+</header>
+
+<!-- ── Radar chart ── -->
+<div class="container">
+  <section>
+    <h2><span class="icon">📡</span> Maturity Profile</h2>
+    <div class="chart-wrap">
+      <div class="chart-canvas-wrap">
+        <canvas id="radarChart" width="420" height="420"></canvas>
+      </div>
+      <div class="chart-legend">
+        <h3>Scale</h3>
+        <div class="legend-levels">
+          <div class="legend-level"><div class="legend-dot l3"></div><strong>3 — OTel-Optimized</strong>: Continuously refined, governed, treated as a long-lived product surface</div>
+          <div class="legend-level"><div class="legend-dot l2"></div><strong>2 — OTel-Native</strong>: OpenTelemetry is the primary interface, designed intentionally for interoperability</div>
+          <div class="legend-level"><div class="legend-dot l1"></div><strong>1 — OTel-Aligned</strong>: OpenTelemetry explicitly supported alongside legacy approaches</div>
+          <div class="legend-level"><div class="legend-dot l0"></div><strong>0 — Instrumented</strong>: Telemetry exists primarily for internal debugging</div>
+        </div>
+        <div style="margin-top:24px; padding: 14px 16px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px;">
+          <div style="font-size:13px; font-weight:700; color:#065f46; margin-bottom:6px;">Overall Profile</div>
+          <div style="font-size:13px; color:#374151; line-height:1.6;">
+            Jaeger v2 achieves strong OTel-Native scores across most dimensions, reflecting its architecture as an OTel Collector distribution. Trace Modeling and Multi-Signal are constrained by its role as a terminal trace backend rather than a lack of OTel commitment.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Summary table ── -->
+  <section>
+    <h2><span class="icon">📊</span> Dimension Summary</h2>
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Dimension</th>
+          <th>Level</th>
+          <th>Summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td><strong>Integration Surface</strong></td>
+          <td><span class="level-badge l2">2 — OTel-Native</span></td>
+          <td>OTLP is the primary interface; Prometheus also available; legacy protocols (Jaeger, Zipkin) remain for receiver compatibility</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td><strong>Semantic Conventions</strong></td>
+          <td><span class="level-badge l2">2 — OTel-Native</span></td>
+          <td>Current OTel semconv used consistently for HTTP spans and metrics; <code>schemaUrl</code> set; no deprecated attributes observed</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td><strong>Resource Attributes &amp; Configuration</strong></td>
+          <td><span class="level-badge l2">2 — OTel-Native</span></td>
+          <td><code>service.name</code>, <code>service.version</code>, <code>service.instance.id</code> set natively; <code>OTEL_TRACES_SAMPLER</code> and <code>OTEL_EXPORTER_OTLP_*</code> respected</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td><strong>Trace Modeling &amp; Context Propagation</strong></td>
+          <td><span class="level-badge l1">1 — OTel-Aligned</span></td>
+          <td>Self-traces cover Query service HTTP operations; trace context accepted on all receiver protocols; but self-traces not exported externally and trace modeling is limited to HTTP entry points</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td><strong>Multi-Signal Observability</strong></td>
+          <td><span class="level-badge l1">1 — OTel-Aligned</span></td>
+          <td>Metrics are first-class (OTLP + Prometheus); self-traces stored internally only; logs are stdout-only with no OTLP export; no cross-signal correlation</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td><strong>Audience &amp; Signal Quality</strong></td>
+          <td><span class="level-badge l2">2 — OTel-Native</span></td>
+          <td>Metrics are operational and pipeline-oriented; self-traces use logical HTTP operation names with current semconv; metrics level configurable; sensible defaults</td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td><strong>Stability &amp; Change Management</strong></td>
+          <td><span class="level-badge l2">2 — OTel-Native</span></td>
+          <td>Telemetry changes appear in release notes; metrics snapshot CI testing in place; <code>schemaUrl</code> set; Prometheus mixin with Grafana dashboard provided; legacy v1 alert rules not yet updated for v2</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── Signal overview ── -->
+  <section>
+    <h2><span class="icon">📶</span> Signal Overview</h2>
+    <div class="signals-grid">
+      <div class="signal-card">
+        <div class="signal-icon">🔍</div>
+        <div class="signal-name">Traces</div>
+        <div class="signal-status partial">⚠ Partial</div>
+        <div class="signal-detail">Self-traces for Query service stored internally. Accepts external traces via OTLP, Jaeger, and Zipkin protocols. Not exported to external OTLP backends.</div>
+      </div>
+      <div class="signal-card">
+        <div class="signal-icon">📈</div>
+        <div class="signal-name">Metrics</div>
+        <div class="signal-status flowing">✓ Flowing</div>
+        <div class="signal-detail">Dual export: OTLP push (periodic reader, 15s) + Prometheus pull (port 8888). 23 native metric names. <code>schemaUrl</code> set.</div>
+      </div>
+      <div class="signal-card">
+        <div class="signal-icon">📋</div>
+        <div class="signal-name">Logs</div>
+        <div class="signal-status not-flowing">✗ stdout only</div>
+        <div class="signal-detail">Structured JSON to stderr with embedded OTel resource fields. No OTLP log export. No trace context in log records.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Dimension details ── -->
+  <section>
+    <h2><span class="icon">🔬</span> Dimension Details</h2>
+
+    <!-- 1. Integration Surface -->
+    <div class="dim-section">
+      <div class="dim-header" onclick="toggleDim(this)">
+        <div class="dim-number">1</div>
+        <div class="dim-title">Integration Surface</div>
+        <span class="level-badge l2">2 — OTel-Native</span>
+        <span class="dim-chevron">▼</span>
+      </div>
+      <div class="dim-body">
+        <div class="dim-grid">
+          <div class="dim-card evidence">
+            <h4>What we observed</h4>
+            <p>
+              Jaeger v2 is itself an OpenTelemetry Collector distribution — OTLP is not bolted on, it is the foundation.
+              Telemetry configuration uses the standard OTel Collector <code>service.telemetry</code> config block with both
+              a Prometheus pull reader (port 8888) and an OTLP push periodic reader. Standard <code>OTEL_TRACES_SAMPLER</code>,
+              <code>OTEL_TRACES_SAMPLER_ARG</code>, and <code>OTEL_EXPORTER_OTLP_*</code> environment variables are all
+              documented and respected. Legacy Jaeger Thrift and Zipkin receiver protocols are maintained for backward
+              compatibility with instrumented services — appropriate for a tracing backend.
+            </p>
+          </div>
+          <div class="dim-card working">
+            <h4>What's working well</h4>
+            <ul>
+              <li>OTLP push (periodic reader) natively supported for metric export</li>
+              <li>Prometheus pull also available — dual-mode integration</li>
+              <li>Standard OTel Collector <code>service.telemetry</code> config block used throughout</li>
+              <li><code>OTEL_TRACES_SAMPLER</code>, <code>OTEL_EXPORTER_OTLP_*</code> env vars respected</li>
+              <li>Pod annotations enable auto-discovery by Prometheus (<code>prometheus.io/scrape=true</code>)</li>
+              <li>Connects to existing OTel Collectors without adapters or glue code</li>
+            </ul>
+          </div>
+          <div class="dim-card opportunity">
+            <h4>Opportunities</h4>
+            <ul>
+              <li>Documenting the integration surface as an explicit stable contract would enable Level 3</li>
+              <li>Providing a migration guide for users moving from v1 legacy exporters to v2 OTLP would reduce upgrade friction</li>
+              <li>Adding an option to export self-traces to an external OTLP endpoint would complete the integration story</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Semantic Conventions -->
+    <div class="dim-section">
+      <div class="dim-header" onclick="toggleDim(this)">
+        <div class="dim-number">2</div>
+        <div class="dim-title">Semantic Conventions</div>
+        <span class="level-badge l2">2 — OTel-Native</span>
+        <span class="dim-chevron">▼</span>
+      </div>
+      <div class="dim-body">
+        <div class="dim-grid">
+          <div class="dim-card evidence">
+            <h4>What we observed</h4>
+            <p>
+              Jaeger v2 uses <strong>current, non-deprecated OTel semantic conventions</strong> throughout. Self-trace span attributes include
+              <code>http.request.method</code>, <code>http.response.status_code</code>, <code>url.path</code>, <code>url.scheme</code>,
+              <code>server.address</code>, <code>network.peer.address</code>, and <code>user_agent.original</code> — all current stable semconv.
+              No deprecated attributes (<code>http.method</code>, <code>http.status_code</code>, <code>http.target</code>) were observed.
+              Metrics use <code>http.server.request.duration</code> (not the deprecated form), with data point attributes
+              <code>http.request.method</code>, <code>http.response.status_code</code>, and <code>network.protocol.version</code>.
+              <code>schemaUrl</code> is set consistently: <code>https://opentelemetry.io/schemas/1.38.0</code> for HTTP metrics,
+              <code>https://opentelemetry.io/schemas/1.18.0</code> for OTel Collector internal metrics.
+              Instrumentation scope is set: <code>go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0</code>.
+            </p>
+          </div>
+          <div class="dim-card working">
+            <h4>What's working well</h4>
+            <ul>
+              <li>All current stable OTel HTTP semconv used — <code>http.request.method</code>, <code>http.response.status_code</code>, <code>url.path</code></li>
+              <li>No deprecated attributes observed anywhere in telemetry</li>
+              <li><code>schemaUrl</code> consistently set on all OTLP metric exports</li>
+              <li>Instrumentation scope name and version set on traces</li>
+              <li>Metric attribute keys align with current semconv</li>
+            </ul>
+          </div>
+          <div class="dim-card opportunity">
+            <h4>Opportunities</h4>
+            <ul>
+              <li>Adding OTLP log export would allow full assessment of log semantic conventions</li>
+              <li>Introducing domain-specific <code>jaeger.*</code> attributes for storage operations, query patterns, and sampling decisions would enable Level 3</li>
+              <li>Documenting custom conventions as explicit semantic extensions with versioning would complete the picture</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Resource Attributes & Configuration -->
+    <div class="dim-section">
+      <div class="dim-header" onclick="toggleDim(this)">
+        <div class="dim-number">3</div>
+        <div class="dim-title">Resource Attributes &amp; Configuration</div>
+        <span class="level-badge l2">2 — OTel-Native</span>
+        <span class="dim-chevron">▼</span>
+      </div>
+      <div class="dim-body">
+        <div class="dim-grid">
+          <div class="dim-card evidence">
+            <h4>What we observed</h4>
+            <p>
+              Jaeger natively emits three core identity attributes: <code>service.name: jaeger</code>,
+              <code>service.version: v2.17.0</code>, and <code>service.instance.id: &lt;UUID&gt;</code> (stable per process lifecycle).
+              These are set in <code>service.telemetry.resource</code> and appear consistently across metrics (OTLP push),
+              metrics (Prometheus scrape), self-traces (internal), and logs (stdout JSON).
+              Standard <code>OTEL_TRACES_SAMPLER</code>, <code>OTEL_TRACES_SAMPLER_ARG</code>, and
+              <code>OTEL_EXPORTER_OTLP_*</code> env vars are all documented and respected.
+              Kubernetes resource attributes (<code>k8s.pod.name</code>, <code>k8s.namespace.name</code>, etc.)
+              are not emitted natively — they are correctly pipeline-derived via the k8sattributes processor.
+            </p>
+          </div>
+          <div class="dim-card working">
+            <h4>What's working well</h4>
+            <ul>
+              <li><code>service.name</code>, <code>service.version</code>, <code>service.instance.id</code> set natively</li>
+              <li>Identity is consistent across all signals (metrics, traces, logs)</li>
+              <li><code>OTEL_TRACES_SAMPLER</code> and <code>OTEL_EXPORTER_OTLP_*</code> respected end-to-end</li>
+              <li>Identity attributes placed on resource, not on spans</li>
+              <li>Delegates to OTel Collector SDK for configuration — correct approach</li>
+            </ul>
+          </div>
+          <div class="dim-card opportunity">
+            <h4>Opportunities</h4>
+            <ul>
+              <li>Explicitly documenting configuration precedence (<code>service.telemetry.resource</code> vs <code>OTEL_SERVICE_NAME</code>) would reduce user confusion</li>
+              <li>Providing guidance for multi-tenant deployments (per-namespace vs per-instance identity) would enable Level 3</li>
+              <li>Treating identity changes as breaking changes with migration guidance would strengthen stability</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Trace Modeling & Context Propagation -->
+    <div class="dim-section">
+      <div class="dim-header" onclick="toggleDim(this)">
+        <div class="dim-number">4</div>
+        <div class="dim-title">Trace Modeling &amp; Context Propagation</div>
+        <span class="level-badge l1">1 — OTel-Aligned</span>
+        <span class="dim-chevron">▼</span>
+      </div>
+      <div class="dim-body">
+        <div class="dim-grid">
+          <div class="dim-card evidence">
+            <h4>What we observed</h4>
+            <p>
+              Jaeger v2.17.0 implements safe self-tracing for its Query service (PR #8208), covering HTTP operations like
+              <code>/api/traces</code> and <code>/api/services</code>. Self-traces are stored internally in Jaeger's own
+              storage backend (not exported to external OTLP collectors). Span kind is correctly set to <code>server</code>.
+              The default sampler is <code>parentbased_always_on</code> — Jaeger traces its own requests when they arrive
+              with a <code>traceparent</code> header. A recursive self-tracing loop prevention mechanism is in place.
+              Jaeger accepts trace context on all receiver protocols: W3C TraceContext (OTLP, verified HTTP 200),
+              B3 (Zipkin, verified HTTP 202), and Jaeger format (Thrift/gRPC, verified port active).
+              As a terminal trace backend, Jaeger does not propagate context outbound — this is by design.
+            </p>
+          </div>
+          <div class="dim-card working">
+            <h4>What's working well</h4>
+            <ul>
+              <li>W3C TraceContext, B3, and Jaeger propagation formats all accepted</li>
+              <li>Self-traces use correct <code>server</code> span kind</li>
+              <li>Self-tracing loop prevention implemented (non-trivial for a trace backend)</li>
+              <li><code>OTEL_TRACES_SAMPLER=always_off</code> documented for production tuning</li>
+              <li>Default <code>parentbased_always_on</code> sampler is sensible</li>
+            </ul>
+          </div>
+          <div class="dim-card opportunity">
+            <h4>Opportunities</h4>
+            <ul>
+              <li>Providing an option to export self-traces to an external OTLP endpoint would enable monitoring Jaeger in a shared observability stack</li>
+              <li>Improving span names from URL paths (<code>/api/traces</code>) to logical operation names (<code>GET /api/traces</code>) would improve usability</li>
+              <li>Expanding self-tracing to storage operations (<code>jaeger_storage</code> extension) would make Jaeger's own performance observable</li>
+              <li>Adding child spans for internal operations (e.g., storage lookups) would create richer trace trees</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Multi-Signal Observability -->
+    <div class="dim-section">
+      <div class="dim-header" onclick="toggleDim(this)">
+        <div class="dim-number">5</div>
+        <div class="dim-title">Multi-Signal Observability</div>
+        <span class="level-badge l1">1 — OTel-Aligned</span>
+        <span class="dim-chevron">▼</span>
+      </div>
+      <div class="dim-body">
+        <div class="dim-grid">
+          <div class="dim-card evidence">
+            <h4>What we observed</h4>
+            <p>
+              Metrics are the only signal that flows to external OTel pipelines — both via OTLP push (periodic reader, 15s)
+              and Prometheus pull (port 8888). 23 native metric names observed, covering pipeline throughput
+              (<code>otelcol_receiver_accepted_spans</code>, <code>otelcol_exporter_sent_spans</code>),
+              HTTP server performance (<code>http.server.request.duration</code>), and process health.
+              Self-traces are stored internally in Jaeger's own storage — not available in shared observability backends.
+              Logs go to stdout as structured JSON with embedded OTel resource fields but are not exported via OTLP
+              and do not include <code>trace_id</code> or <code>span_id</code> for correlation.
+              No cross-signal correlation is possible in standard OTel tooling with the current configuration.
+            </p>
+          </div>
+          <div class="dim-card working">
+            <h4>What's working well</h4>
+            <ul>
+              <li>Metrics are first-class with dual OTLP + Prometheus export</li>
+              <li>Self-traces exist and cover Query service operations</li>
+              <li>Logs are structured JSON with OTel resource fields embedded</li>
+              <li>All signals share consistent <code>service.name</code> identity</li>
+            </ul>
+          </div>
+          <div class="dim-card opportunity">
+            <h4>Opportunities</h4>
+            <ul>
+              <li>Adding OTLP log export would enable cross-signal correlation in shared backends</li>
+              <li>Including <code>trace_id</code> and <code>span_id</code> in structured log output would link log events to self-traces</li>
+              <li>Providing an option to export self-traces externally would unify all three signals in a single observability platform</li>
+              <li>Documenting how to correlate Jaeger's own telemetry signals would help operators set up holistic monitoring</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Audience & Signal Quality -->
+    <div class="dim-section">
+      <div class="dim-header" onclick="toggleDim(this)">
+        <div class="dim-number">6</div>
+        <div class="dim-title">Audience &amp; Signal Quality</div>
+        <span class="level-badge l2">2 — OTel-Native</span>
+        <span class="dim-chevron">▼</span>
+      </div>
+      <div class="dim-body">
+        <div class="dim-grid">
+          <div class="dim-card evidence">
+            <h4>What we observed</h4>
+            <p>
+              Metrics are operationally focused and well-documented. The official monitoring guide explicitly calls out
+              the 4 key metrics to watch: <code>otelcol_receiver_accepted_spans</code>, <code>otelcol_receiver_refused_spans</code>,
+              <code>otelcol_exporter_sent_spans</code>, and <code>otelcol_exporter_send_failed_spans</code>.
+              Metrics verbosity is configurable via <code>metrics.level</code> (<code>basic</code>, <code>normal</code>, <code>detailed</code>).
+              Self-trace span names are URL paths (<code>/api/traces</code>, <code>/api/services</code>) — functional but not
+              prefixed with HTTP method. Span kinds are correctly set. A Grafana dashboard (code-generated via ADR-007)
+              and Prometheus alert rules are provided in the monitoring mixin — however, the alert rules still reference
+              v1 metric names (<code>jaeger_agent_*</code>, <code>jaeger_collector_*</code>) that do not exist in v2.
+            </p>
+          </div>
+          <div class="dim-card working">
+            <h4>What's working well</h4>
+            <ul>
+              <li>Key metrics explicitly documented in the monitoring guide</li>
+              <li>Metrics level is configurable (<code>basic</code> / <code>normal</code> / <code>detailed</code>)</li>
+              <li>Grafana dashboard provided and kept in sync with code generation (ADR-007)</li>
+              <li>No internal function names in span names</li>
+              <li>Correct span kinds (<code>server</code>) on self-traces</li>
+              <li><code>OTEL_TRACES_SAMPLER=always_off</code> documented for production noise reduction</li>
+            </ul>
+          </div>
+          <div class="dim-card opportunity">
+            <h4>Opportunities</h4>
+            <ul>
+              <li><strong>Update Prometheus alert rules</strong> in the monitoring mixin — current rules use v1 metric names (<code>jaeger_agent_*</code>) that don't exist in v2</li>
+              <li>Prefixing self-trace span names with HTTP method (e.g., <code>GET /api/traces</code>) would improve usability</li>
+              <li>Expanding self-tracing to storage operations would give operators visibility into Jaeger's own latency</li>
+              <li>Adding formal metrics snapshot tests would enable Level 3 quality regression detection</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Stability & Change Management -->
+    <div class="dim-section">
+      <div class="dim-header" onclick="toggleDim(this)">
+        <div class="dim-number">7</div>
+        <div class="dim-title">Stability &amp; Change Management</div>
+        <span class="level-badge l2">2 — OTel-Native</span>
+        <span class="dim-chevron">▼</span>
+      </div>
+      <div class="dim-body">
+        <div class="dim-grid">
+          <div class="dim-card evidence">
+            <h4>What we observed</h4>
+            <p>
+              Telemetry-related changes are documented in release notes with PR links. v2.17.0 includes entries for
+              "Safe self-tracing via otel collector telemetry factory (#8208)" and "Implement timer duration bucket
+              parsing in metrics init (#7951)". A CI workflow generates metric change diffs on PRs ("Include metric
+              change details in pr comment" #8153) — a proactive stability mechanism. <code>schemaUrl</code> is
+              consistently set on all OTLP metric exports (1.38.0 for HTTP metrics, 1.18.0 for OTel Collector internals).
+              The Grafana dashboard is code-generated from Go source using <code>grafana-foundation-sdk</code>, keeping
+              it in sync with metric changes. The monitoring mixin's Prometheus alert rules still reference v1 metric
+              names (<code>jaeger_agent_*</code>, <code>jaeger_reporter_*</code>) — these are broken for v2 and represent
+              a stability gap for users relying on the official monitoring tooling.
+            </p>
+          </div>
+          <div class="dim-card working">
+            <h4>What's working well</h4>
+            <ul>
+              <li>Telemetry changes documented in release notes with PR references</li>
+              <li><code>schemaUrl</code> consistently set on all OTLP metric exports</li>
+              <li>CI metric change detection on PRs (proactive)</li>
+              <li>Grafana dashboard kept in sync via code generation (ADR-007)</li>
+              <li>Monitoring documentation explicitly describes telemetry behavior</li>
+              <li>Self-tracing behavior and disable mechanism documented</li>
+            </ul>
+          </div>
+          <div class="dim-card opportunity">
+            <h4>Opportunities</h4>
+            <ul>
+              <li><strong>Update Prometheus alert rules</strong> in the mixin to use v2 metric names (<code>otelcol_receiver_*</code>, <code>otelcol_exporter_*</code>)</li>
+              <li>Adding an explicit stability policy (e.g., "metrics with <code>otelcol_</code> prefix are stable") would help users build reliable dashboards</li>
+              <li>Providing a v1→v2 migration guide for telemetry (metric names, alert rules) would reduce upgrade friction</li>
+              <li>Distinguishing stable vs experimental telemetry in documentation would enable Level 3</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Key takeaways ── -->
+  <section>
+    <h2><span class="icon">💡</span> Key Takeaways</h2>
+    <div class="takeaways-grid">
+      <div class="takeaway-card strengths">
+        <h3>✅ Strengths</h3>
+        <ul>
+          <li><strong>Architecture-level OTel commitment</strong> — Jaeger v2 IS an OTel Collector distribution; OpenTelemetry is the foundation, not an add-on</li>
+          <li><strong>Current semantic conventions</strong> — <code>http.request.method</code>, <code>http.response.status_code</code>, <code>url.path</code> used throughout; no deprecated attributes</li>
+          <li><strong>Dual metric export</strong> — OTLP push + Prometheus pull natively, compatible with both modern and legacy stacks</li>
+          <li><strong>Schema URLs consistently set</strong> — enables schema-aware tooling and version tracking</li>
+          <li><strong>Safe self-tracing</strong> — v2.17.0 implements recursive loop prevention for a trace backend that traces itself</li>
+          <li><strong>CI metric change detection</strong> — PR comments include metric diffs; metrics treated as a contract</li>
+          <li><strong>Stable resource identity</strong> — <code>service.name</code>, <code>service.version</code>, <code>service.instance.id</code> consistent across all signals</li>
+        </ul>
+      </div>
+      <div class="takeaway-card improvements">
+        <h3>🎯 Priority Improvements</h3>
+        <ul>
+          <li><strong>Update Prometheus alert rules</strong> — the monitoring mixin still uses v1 metric names that don't exist in v2; this breaks official alerting guidance</li>
+          <li><strong>Add OTLP log export</strong> — would enable cross-signal correlation and complete the multi-signal picture</li>
+          <li><strong>Enable external self-trace export</strong> — allow users to monitor Jaeger's own behavior in their shared observability stack</li>
+          <li><strong>Add trace context to logs</strong> — include <code>trace_id</code>/<code>span_id</code> in structured log output for correlation</li>
+          <li><strong>Expand self-tracing coverage</strong> — add storage operation spans to make Jaeger's own latency observable</li>
+        </ul>
+      </div>
+      <div class="takeaway-card notable">
+        <h3>🔍 Notable Observations</h3>
+        <ul>
+          <li><strong>Unique architectural position</strong> — as both an OTel Collector distribution and a terminal trace backend, some dimensions are constrained by role rather than OTel commitment</li>
+          <li><strong>Outdated TODO comment</strong> — the default <code>config.yaml</code> still says "TODO Initialize telemetry tracer" but v2.17.0 actually implements self-tracing</li>
+          <li><strong>Code-generated Grafana dashboard</strong> — ADR-007 establishes a workflow to regenerate the dashboard from Go source, keeping it in sync with metric changes</li>
+          <li><strong><code>parentbased_always_on</code> default sampler</strong> — Jaeger traces its own requests only when they arrive with a <code>traceparent</code> header; avoids noise while enabling observability</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ── Footer ── -->
+<footer class="page-footer">
+  <p>
+    Evaluated using the <a href="https://github.com/open-telemetry/community" target="_blank">OpenTelemetry Support Maturity Model for CNCF Projects</a> (draft) ·
+    Telemetry collected in a local kind cluster with OTel Collector file export ·
+    Semantic conventions checked against <a href="https://opentelemetry.io/docs/specs/semconv/" target="_blank">OTel Semconv v1.38.0</a>
+  </p>
+  <p style="margin-top:6px;">
+    Project: <a href="https://github.com/jaegertracing/jaeger" target="_blank">github.com/jaegertracing/jaeger</a> ·
+    Docs: <a href="https://www.jaegertracing.io/docs/2.17/operations/monitoring/" target="_blank">jaegertracing.io/docs/2.17</a>
+  </p>
+</footer>
+
+<script>
+  // ── Radar chart ──
+  const ctx = document.getElementById('radarChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: [
+        'Integration\nSurface',
+        'Semantic\nConventions',
+        'Resource Attrs\n& Config',
+        'Trace Modeling\n& Propagation',
+        'Multi-Signal\nObservability',
+        'Audience &\nSignal Quality',
+        'Stability &\nChange Mgmt'
+      ],
+      datasets: [{
+        label: 'Jaeger v2.17.0',
+        data: [2, 2, 2, 1, 1, 2, 2],
+        backgroundColor: 'rgba(37, 99, 235, 0.18)',
+        borderColor: 'rgba(37, 99, 235, 0.9)',
+        borderWidth: 2.5,
+        pointBackgroundColor: 'rgba(37, 99, 235, 1)',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: {
+        r: {
+          min: 0,
+          max: 3,
+          ticks: {
+            stepSize: 1,
+            font: { size: 11 },
+            color: '#64748b',
+            backdropColor: 'transparent',
+            callback: (v) => ['Instrumented','Aligned','Native','Optimized'][v] || v
+          },
+          grid: { color: 'rgba(0,0,0,0.08)' },
+          angleLines: { color: 'rgba(0,0,0,0.1)' },
+          pointLabels: {
+            font: { size: 11.5, weight: '600' },
+            color: '#374151'
+          }
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const levels = ['Instrumented','OTel-Aligned','OTel-Native','OTel-Optimized'];
+              return ` Level ${ctx.raw} — ${levels[ctx.raw]}`;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // ── Accordion ──
+  function toggleDim(header) {
+    const body = header.nextElementSibling;
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    header.classList.toggle('open', !isOpen);
+  }
+
+  // Open first dimension by default
+  document.querySelector('.dim-header').click();
+</script>
+</body>
+</html>

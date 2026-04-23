@@ -110,7 +110,8 @@ jobs:
           # Trigger evaluation
           curl -X POST http://localhost:8080/api/chat \
             -H "Content-Type: application/json" \
-            -d "{\"message\": \"Evaluate ${{ github.event.inputs.project_url }}\"}"
+            -H "Accept: text/event-stream" \
+            -d "{\"conversationId\": \"eval-1\", \"message\": \"Evaluate ${{ github.event.inputs.project_url }}\"}"
 
       - name: Upload evaluation artifacts
         uses: actions/upload-artifact@v4
@@ -136,13 +137,49 @@ The GitHub Actions runner must have the following tools available before startin
 
 - Java 21+
 - Maven (or use the included `./mvnw` wrapper)
-- An Anthropic API key
-- `kind`, `kubectl`, `helm` (for the cluster-based evaluation phases)
+- `kind`, `kubectl`, `helm`, `docker` (running)
+
+### Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key — passed to Spring AI (`spring.ai.anthropic.api-key`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | OTLP base URL for exporting the application's own traces, metrics, and logs (e.g. `https://ingress.us1.dash0.com`) |
+| `OTEL_EXPORTER_OTLP_HEADERS_API_KEY` | No | Bearer token added to the `Authorization` header on every OTLP export request |
+| `DASH0_DATASET` | No | Value sent as the `Dash0-Dataset` header on every OTLP export request |
+
+The application always exports its own telemetry to the endpoints above (all three signals — traces, metrics, logs). If the OTLP variables are not set, Spring Boot will log errors on startup but the evaluation API will still work.
+
+Other notable defaults set in `application.yml`:
+
+| Property | Default | Notes |
+|---|---|---|
+| `spring.ai.anthropic.chat.options.model` | `claude-sonnet-4-6` | Model used for evaluations |
+| `spring.ai.anthropic.chat.options.max-tokens` | `4096` | Maximum tokens per response |
+| `spring.ai.anthropic.chat.options.temperature` | `0.7` | Sampling temperature |
+| `management.tracing.sampling.probability` | `1.0` | 100 % trace sampling for the app itself |
+| `server.port` | `8080` | HTTP port |
+
+### Set up the evaluation cluster
+
+Before starting the application, create the kind cluster with the OTel Collector and test backend:
+
+```bash
+bash scripts/setup-otel-cluster.sh <project-name>
+# e.g.
+bash scripts/setup-otel-cluster.sh jaeger
+```
 
 ### Run
 
 ```bash
 export ANTHROPIC_API_KEY=your-key-here
+
+# Optional — export the app's own telemetry to an OTLP backend
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://ingress.us1.dash0.com
+export OTEL_EXPORTER_OTLP_HEADERS_API_KEY=your-dash0-token
+export DASH0_DATASET=otel-score
+
 ./mvnw spring-boot:run
 ```
 
@@ -153,7 +190,9 @@ The API is available at `http://localhost:8080`.
 ```bash
 curl -X POST http://localhost:8080/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "Evaluate https://github.com/jaegertracing/jaeger"}'
+  -H "Accept: text/event-stream" \
+  -d '{"conversationId": "eval-jaeger", "clusterName": "otel-eval-jaeger", "message": "Install https://github.com/jaegertracing/jaeger, evaluate its OTel maturity, and generate the report."}' \
+  --max-time 7200
 ```
 
 ### Run tests
@@ -185,13 +224,9 @@ Each project is evaluated across **7 dimensions** on a **0–3 scale**:
 
 See `.claude/skills/maturity-model-spec.md` for the full specification.
 
-## What's Not Yet Implemented
+## Evaluation Results
 
-| Item | Status |
-|---|---|
-| Real scoring tools | `OtelScoringTools.java` currently uses simulated/hash-based scores |
-
-Contributions welcome — see [Contributing](#contributing).
+The `/results` folder contains the evaluation results for different projects.
 
 ## Contributing
 

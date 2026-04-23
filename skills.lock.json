@@ -15,18 +15,6 @@
       "installedAt": "2026-04-17T18:13:36Z"
     },
     {
-      "name": "setup-otel-cluster",
-      "path": ".claude/skills/setup-otel-cluster",
-      "source": {
-        "registry": "docker.io",
-        "repository": "salaboy/setup-otel-cluster",
-        "tag": "0.0.1",
-        "digest": "sha256:e71c2e43e3763fa7b841e70910cd8883fc884a79238c6fde54797de7678f7687",
-        "ref": "docker.io/salaboy/setup-otel-cluster:0.0.1@sha256:e71c2e43e3763fa7b841e70910cd8883fc884a79238c6fde54797de7678f7687"
-      },
-      "installedAt": "2026-04-17T18:13:37Z"
-    },
-    {
       "name": "evaluate-otel-maturity",
       "path": ".claude/skills/evaluate-otel-maturity",
       "source": {

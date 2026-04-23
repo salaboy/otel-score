@@ -93,12 +93,10 @@ config:
       protocols:
         grpc: {}
         http: {}
-
-    # Prometheus receiver — project-specific scrape configs will be added
-    # by the skill when installing the CNCF project
-    prometheus:
-      config:
-        scrape_configs: []
+    # prometheus receiver is intentionally omitted here — it requires at least
+    # one scrape_config or a target_allocator to be valid. The install-cncf-project
+    # skill adds project-specific scrape targets and re-applies this config via
+    # helm upgrade when the evaluated project exposes Prometheus metrics.
 
   exporters:
     file/traces:
@@ -130,7 +128,6 @@ config:
       metrics:
         receivers:
           - otlp
-          - prometheus
           - k8s_cluster
         processors:
           - memory_limiter

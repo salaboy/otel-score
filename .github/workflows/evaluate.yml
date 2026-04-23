@@ -11,7 +11,7 @@ on:
 jobs:
   evaluate:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
@@ -19,15 +19,31 @@ jobs:
 
       # ── Evaluation setup ─────────────────────────────────────────────────
 
-      - name: Derive project name and prepare output directory
+      - name: Derive project name
         run: |
           PROJECT_NAME=$(basename "${{ github.event.inputs.project_url }}")
           echo "PROJECT_NAME=${PROJECT_NAME}" >> "$GITHUB_ENV"
-          # Pre-create the host mount so kind can bind-mount it
-          mkdir -p "/tmp/otel-eval-${PROJECT_NAME}"
+
+      - name: Install kind
+        run: |
+          curl -fsSL https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64 -o /usr/local/bin/kind
+          chmod +x /usr/local/bin/kind
+          kind version
+
+      - name: Install helm
+        run: |
+          curl -fsSL https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz -o /tmp/helm.tar.gz
+          tar -xzf /tmp/helm.tar.gz --strip-components=1 -C /usr/local/bin linux-amd64/helm
+          helm version
+
+      - name: Set up OTel evaluation cluster
+        run: bash scripts/setup-otel-cluster.sh "${{ env.PROJECT_NAME }}"
 
       # ── Start otel-score ─────────────────────────────────────────────────
       # The container ships with kind, kubectl, helm, jq, and the Docker CLI.
+      # --network=host is required so that kubectl inside the container can reach
+      # the kind cluster API server at 127.0.0.1:<port> on the host; without it
+      # 127.0.0.1 resolves to the container's own loopback and all kubectl calls fail.
       # The Docker socket is mounted so kind can create clusters on the host daemon.
       # /tmp is shared so the OTel Collector can write JSONL files the container
       # can later read back for evaluation.
@@ -39,12 +55,12 @@ jobs:
           OTEL_EXPORTER_OTLP_HEADERS_API_KEY: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS_API_KEY }}
         run: |
           docker run -d --name otel-score \
+            --network=host \
             -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
             -e OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT}" \
             -e OTEL_EXPORTER_OTLP_HEADERS_API_KEY="${OTEL_EXPORTER_OTLP_HEADERS_API_KEY}" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /tmp:/tmp \
-            -p 8080:8080 \
             ghcr.io/${{ github.repository }}:latest
 
       - name: Wait for otel-score to be ready
@@ -69,8 +85,9 @@ jobs:
           echo "Evaluating: ${{ github.event.inputs.project_url }}"
           curl -fsSL -X POST http://localhost:8080/api/chat \
             -H "Content-Type: application/json" \
-            -d "{\"message\": \"Evaluate ${{ github.event.inputs.project_url }}\"}" \
-            --max-time 3600 \
+            -H "Accept: text/event-stream" \
+            -d "{\"conversationId\": \"eval-${{ env.PROJECT_NAME }}\", \"clusterName\": \"otel-eval-${{ env.PROJECT_NAME }}\", \"message\": \"The kind cluster otel-eval-${{ env.PROJECT_NAME }} is already running with the OTel Collector and test backend deployed. Go straight to install CNCF project ${{ github.event.inputs.project_url }}, evaluate its OTel maturity, and generate the report.\"}" \
+            --max-time 7200 \
             -o evaluation-response.txt
           echo "--- Agent response ---"
           cat evaluation-response.txt
@@ -86,6 +103,28 @@ jobs:
             evaluation-response.txt
             /tmp/otel-eval-${{ env.PROJECT_NAME }}/
           if-no-files-found: warn
+
+      # ── Open PR with report ──────────────────────────────────────────────
+
+      - name: Copy report into results directory
+        run: |
+          mkdir -p "results/${{ env.PROJECT_NAME }}"
+          cp ".otel-eval/${{ env.PROJECT_NAME }}/report.html" \
+             "results/${{ env.PROJECT_NAME }}/report.html"
+
+      - name: Create pull request with report
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: results/${{ env.PROJECT_NAME }}
+          base: main
+          commit-message: "results: add OTel maturity report for ${{ env.PROJECT_NAME }}"
+          title: "OTel maturity report: ${{ env.PROJECT_NAME }}"
+          body: |
+            Automated OTel maturity evaluation for [${{ env.PROJECT_NAME }}](${{ github.event.inputs.project_url }}).
+
+            Triggered by @${{ github.actor }} via workflow dispatch.
+          add-paths: results/${{ env.PROJECT_NAME }}/report.html
 
       - name: Print otel-score logs on failure
         if: failure()

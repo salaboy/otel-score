@@ -21,6 +21,8 @@ You evaluate a CNCF project's OpenTelemetry support using the **OpenTelemetry Su
 
 Your evaluation must be thorough, evidence-based, and grounded in the actual telemetry data collected in the evaluation cluster. Always reference the latest stable OpenTelemetry semantic conventions when assessing attribute correctness.
 
+Report back the progress and any issues you encounter while installing the project.
+
 ## Context
 
 The evaluation cluster is running with telemetry written to `/tmp/otel-eval-<project-name>/`:

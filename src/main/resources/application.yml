@@ -1,24 +1,37 @@
 spring:
   application:
     name: otel-score
+  # Disable the Tomcat async/SSE timeout. Spring MVC adapts Flux<String> as an
+  # async response and the default timeout would close the stream mid-evaluation.
+  mvc:
+    async:
+      request-timeout: -1
   ai:
     anthropic:
       api-key: ${ANTHROPIC_API_KEY}
+      # Sets the OkHttp call timeout on the Anthropic Java SDK client.
+      # Evaluations involve long tool calls (helm install, traffic generation, etc.)
+      # and the default SDK timeout (~10 min) will kill the stream mid-evaluation.
+      timeout: 2h
       chat:
         options:
           model: claude-sonnet-4-6
-          max-tokens: 4096
+          max-tokens: 16384
           temperature: 0.7
     chat:
       observations:
         include-error-logging: true
         log-completion: true
         log-prompt: true
+    tools:
+      observations:
+        include-content: true
 
 
 logging:
   level:
-    org.springframework.ai: DEBUG
+    org.springframework.ai: INFO
+    otel-score.tools: INFO
 
 
 management:

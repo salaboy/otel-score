@@ -3,21 +3,22 @@ name: install-cncf-project
 description: Research, install, and configure a CNCF project in an OpenTelemetry evaluation cluster. Looks up official docs, installs via Helm or manifests, configures telemetry export (OTLP or Prometheus), and generates traffic for evaluation. Use after setup-otel-cluster.
 argument-hint: "<project-name>"
 allowed-tools:
-  - Bash
-  - Read
-  - Write
-  - Edit
-  - Grep
-  - Glob
-  - Agent
-  - AskUserQuestion
-  - WebFetch
-  - WebSearch
+   - Bash
+   - Read
+   - Write
+   - Edit
+   - Grep
+   - Glob
+   - Agent
+   - AskUserQuestion
+   - WebFetch
+   - WebSearch
 ---
 
 # Install CNCF Project for OpenTelemetry Evaluation
 
-You install and configure a CNCF project in an evaluation cluster created by the `setup-otel-cluster` skill. Your goal is to get the project running with all available telemetry flowing to the OpenTelemetry Collector, so it can be evaluated for OpenTelemetry maturity.
+You install and configure a CNCF project in an evaluation cluster already created. Your goal is to get the project running with all available telemetry flowing to the OpenTelemetry Collector, so it can be evaluated for OpenTelemetry maturity.
+Report back the progress and any issues you encounter while installing the project.
 
 ## Context
 
@@ -39,7 +40,7 @@ The user provides the `<project-name>` — the CNCF project to install (e.g., `t
 Before installing anything, research the project's observability capabilities. Use web search and the project's official documentation to answer:
 
 1. **What is the project?** Brief description and its role in a Kubernetes cluster.
-2. **How is it installed?** Helm chart, operator, manifests, CLI tool, etc.
+2. **How is it installed?** Helm chart, operator, manifests, CLI tool, etc. Always look for the latest released version, do not use "latest".
 3. **What telemetry does it produce?**
    - Traces: Does it emit spans? Via OTLP, Zipkin, Jaeger, or other protocols?
    - Metrics: Prometheus endpoints? OTLP metrics? Both?

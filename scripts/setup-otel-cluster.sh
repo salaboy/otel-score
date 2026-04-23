@@ -120,7 +120,7 @@ helm upgrade --install otel-collector open-telemetry/opentelemetry-collector \
     --kube-context "kind-$CLUSTER_NAME" \
     --namespace opentelemetry \
     -f "$WORK_DIR/collector/values.yaml" \
-    --wait --timeout 3m
+    --wait --timeout 10m
 ok "OTel Collector installed"
 
 # ── Step 9: Deploy the test backend ──────────────────────────────────────────

@@ -31,7 +31,7 @@ management:
         url: ${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/metrics
         headers:
           Authorization: "Bearer ${OTEL_EXPORTER_OTLP_HEADERS_API_KEY}"
-          Dash0-Dataset: "otel-score"
+          Dash0-Dataset: "${DASH0_DATASET}"
   opentelemetry:
     tracing:
       export:
@@ -39,14 +39,14 @@ management:
           endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces
           headers:
             Authorization: "Bearer ${OTEL_EXPORTER_OTLP_HEADERS_API_KEY}"
-            Dash0-Dataset: "otel-score"
+            Dash0-Dataset: "${DASH0_DATASET}"
     logging:
       export:
         otlp:
           endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/logs
           headers:
             Authorization: "Bearer ${OTEL_EXPORTER_OTLP_HEADERS_API_KEY}"
-            Dash0-Dataset: "otel-score"
+            Dash0-Dataset: "${DASH0_DATASET}"
 
 server:
   port: 8080

@@ -149,8 +149,11 @@ if ! helm upgrade --install otel-collector open-telemetry/opentelemetry-collecto
     if [[ -n "$POD" ]]; then
         kubectl describe "$POD" -n opentelemetry --context "kind-$CLUSTER_NAME" 2>/dev/null || true
         echo ""
-        echo "── Pod logs:"
+        echo "── Pod logs (current):"
         kubectl logs "$POD" -n opentelemetry --context "kind-$CLUSTER_NAME" --tail=50 2>/dev/null || true
+        echo ""
+        echo "── Pod logs (previous crash):"
+        kubectl logs "$POD" -n opentelemetry --context "kind-$CLUSTER_NAME" --previous --tail=50 2>/dev/null || echo "  (no previous logs)"
     fi
     echo ""
     echo "── Events in opentelemetry namespace:"

@@ -27,12 +27,11 @@ presets:
     extractAllPodLabels: true
     extractAllPodAnnotations: true
 
+# Let the chart auto-generate ClusterRole rules based on enabled presets.
+# Custom rules here would override the chart defaults and break receivers
+# (k8s_cluster needs events, namespaces, deployments, replicasets, etc.).
 clusterRole:
   create: true
-  rules:
-    - apiGroups: [""]
-      resources: ["pods", "services", "endpoints", "nodes", "nodes/proxy"]
-      verbs: ["get", "list", "watch"]
 
 tolerations:
   - key: node-role.kubernetes.io/control-plane

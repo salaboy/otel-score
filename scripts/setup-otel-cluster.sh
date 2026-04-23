@@ -109,11 +109,13 @@ ok "Image loaded into kind cluster"
 COLLECTOR_IMAGE="otel/opentelemetry-collector-contrib:0.150.1"
 
 log "Pre-pulling OTel Collector image on host Docker..."
-docker pull "$COLLECTOR_IMAGE"
+docker pull --platform linux/amd64 "$COLLECTOR_IMAGE"
 ok "Image pulled: $COLLECTOR_IMAGE"
 
 log "Loading collector image into kind cluster..."
-kind load docker-image "$COLLECTOR_IMAGE" --name "$CLUSTER_NAME"
+docker save "$COLLECTOR_IMAGE" -o /tmp/collector-image.tar
+kind load image-archive /tmp/collector-image.tar --name "$CLUSTER_NAME"
+rm -f /tmp/collector-image.tar
 ok "Image loaded into kind cluster"
 
 log "Adding OpenTelemetry Helm repo..."

@@ -57,12 +57,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
           OTEL_EXPORTER_OTLP_HEADERS_API_KEY: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS_API_KEY }}
+          DASH0_DATASET: ${{ secrets.DASH0_DATASET }}
         run: |
           docker run -d --name otel-score \
             --network=host \
             -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
             -e OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT}" \
             -e OTEL_EXPORTER_OTLP_HEADERS_API_KEY="${OTEL_EXPORTER_OTLP_HEADERS_API_KEY}" \
+            -e DASH0_DATASET="${DASH0_DATASET}" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /tmp:/tmp \
             ghcr.io/${{ github.repository }}:latest
@@ -87,11 +89,25 @@ jobs:
       - name: Run evaluation
         run: |
           echo "Evaluating: ${{ github.event.inputs.project_url }}"
-          curl -fN -X POST http://localhost:8080/api/chat \
+          curl -fsS -N -X POST http://localhost:8080/api/chat \
             -H "Content-Type: application/json" \
             -H "Accept: text/event-stream" \
             -d "{\"conversationId\": \"eval-${{ env.PROJECT_NAME }}\", \"clusterName\": \"otel-eval-${{ env.PROJECT_NAME }}\", \"message\": \"The kind cluster otel-eval-${{ env.PROJECT_NAME }} is already running with the OTel Collector and test backend deployed. Go straight to install CNCF project ${{ github.event.inputs.project_url }}, evaluate its OTel maturity, and generate the report.\"}" \
             --max-time 7200 | tee evaluation-response.txt
+
+      # ── Extract results from container ────────────────────────────────────
+      # The agent writes to /app/.otel-eval/ inside the container (ShellTools
+      # runs inside the container, not on the host). Only /tmp is shared via
+      # volume mount, so we need to docker cp the evaluation artifacts out.
+
+      - name: Copy evaluation artifacts from container
+        if: always()
+        run: |
+          docker cp "otel-score:/app/.otel-eval/${{ env.PROJECT_NAME }}" \
+                    ".otel-eval/${{ env.PROJECT_NAME }}" 2>/dev/null || \
+            echo "WARNING: could not copy .otel-eval from container"
+          echo "── Files extracted from container:"
+          find ".otel-eval/${{ env.PROJECT_NAME }}" -type f 2>/dev/null || echo "  (none)"
 
       # ── Artifacts ────────────────────────────────────────────────────────
 
@@ -102,49 +118,83 @@ jobs:
           name: otel-evaluation-${{ env.PROJECT_NAME }}
           path: |
             evaluation-response.txt
+            .otel-eval/${{ env.PROJECT_NAME }}/
             /tmp/otel-eval-${{ env.PROJECT_NAME }}/
           if-no-files-found: warn
 
-      # ── Open PR with report ──────────────────────────────────────────────
+      # ── Open PR with results ─────────────────────────────────────────────
 
-      - name: Copy report into results directory
+      - name: Collect results for PR
+        id: collect
         run: |
-          mkdir -p "results/${{ env.PROJECT_NAME }}"
-          cp ".otel-eval/${{ env.PROJECT_NAME }}/report.html" \
-             "results/${{ env.PROJECT_NAME }}/report.html"
+          SRC=".otel-eval/${{ env.PROJECT_NAME }}"
+          DST="results/${{ env.PROJECT_NAME }}"
+          mkdir -p "$DST"
 
-      - name: Create pull request with report
+          FILES_FOUND=0
+          for file in report.html EVALUATION.md RESEARCH.md INSTALL-PLAN.md; do
+            if [[ -f "$SRC/$file" ]]; then
+              cp "$SRC/$file" "$DST/$file"
+              echo "  ✓ $file"
+              FILES_FOUND=$((FILES_FOUND + 1))
+            else
+              echo "  ✗ $file (not generated)"
+            fi
+          done
+
+          if [[ $FILES_FOUND -eq 0 ]]; then
+            echo "ERROR: no evaluation files were generated"
+            echo "── Container logs (last 50 lines):"
+            docker logs otel-score --tail=50 2>/dev/null || true
+            exit 1
+          fi
+
+          echo ""
+          echo "── $FILES_FOUND file(s) will be included in the pull request:"
+          ls -lh "$DST"
+          echo "files_found=$FILES_FOUND" >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request with results
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: results/${{ env.PROJECT_NAME }}
           base: main
-          commit-message: "results: add OTel maturity report for ${{ env.PROJECT_NAME }}"
+          commit-message: "results: add OTel maturity evaluation for ${{ env.PROJECT_NAME }}"
           title: "OTel maturity report: ${{ env.PROJECT_NAME }}"
           body: |
             Automated OTel maturity evaluation for [${{ env.PROJECT_NAME }}](${{ github.event.inputs.project_url }}).
 
+            ## Included files
+            - `report.html` — interactive radar chart report
+            - `EVALUATION.md` — detailed per-dimension assessment with evidence
+            - `RESEARCH.md` — research notes from project installation
+            - `INSTALL-PLAN.md` — installation plan and configuration
+
+            > Only files that were successfully generated are included.
+
             Triggered by @${{ github.actor }} via workflow dispatch.
-          add-paths: results/${{ env.PROJECT_NAME }}/report.html
-        env:
-          GIT_PUSH_RETRY: "3"
+          add-paths: results/${{ env.PROJECT_NAME }}/*
 
       - name: Retry PR on transient failure
-        if: failure()
+        if: failure() && steps.collect.outputs.files_found != ''
         run: |
           echo "PR creation failed — retrying with git + gh cli"
           cd "$GITHUB_WORKSPACE"
           git checkout -B "results/${{ env.PROJECT_NAME }}"
 
-          # Re-copy the report (the failed action may have left the worktree dirty)
-          mkdir -p "results/${{ env.PROJECT_NAME }}"
-          cp ".otel-eval/${{ env.PROJECT_NAME }}/report.html" \
-             "results/${{ env.PROJECT_NAME }}/report.html"
+          # Re-collect (the failed action may have left the worktree dirty)
+          SRC=".otel-eval/${{ env.PROJECT_NAME }}"
+          DST="results/${{ env.PROJECT_NAME }}"
+          mkdir -p "$DST"
+          for file in report.html EVALUATION.md RESEARCH.md INSTALL-PLAN.md; do
+            [[ -f "$SRC/$file" ]] && cp "$SRC/$file" "$DST/$file"
+          done
 
-          git add "results/${{ env.PROJECT_NAME }}/report.html"
+          git add "results/${{ env.PROJECT_NAME }}/"
           git -c user.name="github-actions[bot]" \
               -c user.email="github-actions[bot]@users.noreply.github.com" \
-              commit -m "results: add OTel maturity report for ${{ env.PROJECT_NAME }}" || true
+              commit -m "results: add OTel maturity evaluation for ${{ env.PROJECT_NAME }}" || true
 
           for attempt in 1 2 3; do
             echo "Push attempt ${attempt}/3..."
@@ -155,14 +205,24 @@ jobs:
             sleep 10
           done
 
-          # Create PR if it doesn't already exist
           EXISTING=$(gh pr list --head "results/${{ env.PROJECT_NAME }}" --json number --jq '.[0].number' 2>/dev/null || true)
           if [[ -z "$EXISTING" ]]; then
             gh pr create \
               --title "OTel maturity report: ${{ env.PROJECT_NAME }}" \
-              --body "Automated OTel maturity evaluation for [${{ env.PROJECT_NAME }}](${{ github.event.inputs.project_url }}).
+              --body "$(cat <<'BODY'
+          Automated OTel maturity evaluation for [${{ env.PROJECT_NAME }}](${{ github.event.inputs.project_url }}).
 
-          Triggered by @${{ github.actor }} via workflow dispatch." \
+          ## Included files
+          - `report.html` — interactive radar chart report
+          - `EVALUATION.md` — detailed per-dimension assessment with evidence
+          - `RESEARCH.md` — research notes from project installation
+          - `INSTALL-PLAN.md` — installation plan and configuration
+
+          > Only files that were successfully generated are included.
+
+          Triggered by @${{ github.actor }} via workflow dispatch.
+          BODY
+          )" \
               --base main \
               --head "results/${{ env.PROJECT_NAME }}"
           else

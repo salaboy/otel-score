@@ -33,10 +33,25 @@ public class ChatController {
                 .conversationId(request.conversationId())
                 .build();
 
+        StringBuilder userPrompt = new StringBuilder();
+        userPrompt.append("The CNCF project to evaluate is: ")
+                .append(request.projectName())
+                .append(" (").append(request.projectUrl()).append(").\n");
+
+        if (request.projectDir() != null && !request.projectDir().isBlank()) {
+            userPrompt.append("A previous installation run exists at: ")
+                    .append(request.projectDir())
+                    .append(". Review the installation steps in ")
+                    .append(request.projectDir())
+                    .append("/INSTALL-PLAN.md before proceeding.\n");
+        }
+
+        userPrompt.append(request.message());
+
         return chatClient.prompt()
                 .advisors(advisor)
                 .system("The Kubernetes cluster to use for this evaluation is: " + request.clusterName())
-                .user(request.message())
+                .user(userPrompt.toString())
                 .stream()
                 .content();
     }

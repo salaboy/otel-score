@@ -3,6 +3,10 @@ name: Evaluate CNCF Project OTel Maturity
 on:
   workflow_dispatch:
     inputs:
+      project_name:
+        description: 'CNCF project name (e.g. jaeger)'
+        required: true
+        type: string
       project_url:
         description: 'CNCF project GitHub URL (e.g. https://github.com/jaegertracing/jaeger)'
         required: true
@@ -23,11 +27,6 @@ jobs:
 
       # ── Evaluation setup ─────────────────────────────────────────────────
 
-      - name: Derive project name
-        run: |
-          PROJECT_NAME=$(basename "${{ github.event.inputs.project_url }}")
-          echo "PROJECT_NAME=${PROJECT_NAME}" >> "$GITHUB_ENV"
-
       - name: Install kind
         run: |
           sudo curl -fsSL https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64 -o /usr/local/bin/kind
@@ -41,7 +40,7 @@ jobs:
           helm version
 
       - name: Set up OTel evaluation cluster
-        run: bash scripts/setup-otel-cluster.sh "${{ env.PROJECT_NAME }}"
+        run: bash scripts/setup-otel-cluster.sh "${{ github.event.inputs.project_name }}"
 
       # ── Start otel-score ─────────────────────────────────────────────────
       # The container ships with kind, kubectl, helm, jq, and the Docker CLI.
@@ -92,7 +91,7 @@ jobs:
           curl -fsS -N -X POST http://localhost:8080/api/chat \
             -H "Content-Type: application/json" \
             -H "Accept: text/event-stream" \
-            -d "{\"conversationId\": \"eval-${{ env.PROJECT_NAME }}\", \"clusterName\": \"otel-eval-${{ env.PROJECT_NAME }}\", \"message\": \"The kind cluster otel-eval-${{ env.PROJECT_NAME }} is already running with the OTel Collector and test backend deployed. Go straight to install CNCF project ${{ github.event.inputs.project_url }}, evaluate its OTel maturity, and generate the report.\"}" \
+            -d "{\"conversationId\": \"eval-${{ github.event.inputs.project_name }}\", \"clusterName\": \"otel-eval-${{ github.event.inputs.project_name }}\", \"projectName\": \"${{ github.event.inputs.project_name }}\", \"projectUrl\": \"${{ github.event.inputs.project_url }}\", \"message\": \"The kind cluster otel-eval-${{ github.event.inputs.project_name }} is already running with the OTel Collector and test backend deployed. Go straight to install the project, evaluate its OTel maturity, and generate the report.\"}" \
             --max-time 7200 | tee evaluation-response.txt
 
       # ── Extract results from container ────────────────────────────────────
@@ -108,13 +107,13 @@ jobs:
 
           # docker cp copies a dir INTO an existing target, creating a nested
           # subdirectory. Remove the host copy first so docker cp creates it fresh.
-          rm -rf ".otel-eval/${{ env.PROJECT_NAME }}"
-          docker cp "otel-score:/app/.otel-eval/${{ env.PROJECT_NAME }}" \
-                    ".otel-eval/${{ env.PROJECT_NAME }}" || \
+          rm -rf ".otel-eval/${{ github.event.inputs.project_name }}"
+          docker cp "otel-score:/app/.otel-eval/${{ github.event.inputs.project_name }}" \
+                    ".otel-eval/${{ github.event.inputs.project_name }}" || \
             echo "WARNING: docker cp failed — files may be at a different path"
 
           echo "── Files on host after extraction:"
-          find ".otel-eval/${{ env.PROJECT_NAME }}" -type f 2>/dev/null || echo "  (none)"
+          find ".otel-eval/${{ github.event.inputs.project_name }}" -type f 2>/dev/null || echo "  (none)"
 
       # ── Artifacts ────────────────────────────────────────────────────────
 
@@ -122,11 +121,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: otel-evaluation-${{ env.PROJECT_NAME }}
+          name: otel-evaluation-${{ github.event.inputs.project_name }}
           path: |
             evaluation-response.txt
-            .otel-eval/${{ env.PROJECT_NAME }}/
-            /tmp/otel-eval-${{ env.PROJECT_NAME }}/
+            .otel-eval/${{ github.event.inputs.project_name }}/
+            /tmp/otel-eval-${{ github.event.inputs.project_name }}/
           if-no-files-found: warn
 
       # ── Open PR with results ─────────────────────────────────────────────
@@ -134,8 +133,8 @@ jobs:
       - name: Collect results for PR
         id: collect
         run: |
-          SRC=".otel-eval/${{ env.PROJECT_NAME }}"
-          DST="results/${{ env.PROJECT_NAME }}"
+          SRC=".otel-eval/${{ github.event.inputs.project_name }}"
+          DST="results/${{ github.event.inputs.project_name }}"
 
           if [[ ! -d "$SRC" ]] || [[ -z "$(ls -A "$SRC" 2>/dev/null)" ]]; then
             echo "ERROR: no evaluation files were generated at $SRC"
@@ -155,52 +154,52 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          branch: results/${{ env.PROJECT_NAME }}
+          branch: results/${{ github.event.inputs.project_name }}
           base: main
-          commit-message: "results: add OTel maturity evaluation for ${{ env.PROJECT_NAME }}"
-          title: "OTel maturity report: ${{ env.PROJECT_NAME }}"
+          commit-message: "results: add OTel maturity evaluation for ${{ github.event.inputs.project_name }}"
+          title: "OTel maturity report: ${{ github.event.inputs.project_name }}"
           body: |
-            Automated OTel maturity evaluation for [${{ env.PROJECT_NAME }}](${{ github.event.inputs.project_url }}).
+            Automated OTel maturity evaluation for [${{ github.event.inputs.project_name }}](${{ github.event.inputs.project_url }}).
 
-            All files from the `.otel-eval/${{ env.PROJECT_NAME }}/` evaluation directory are included.
+            All files from the `.otel-eval/${{ github.event.inputs.project_name }}/` evaluation directory are included.
 
             Triggered by @${{ github.actor }} via workflow dispatch.
-          add-paths: results/${{ env.PROJECT_NAME }}/*
+          add-paths: results/${{ github.event.inputs.project_name }}/*
 
       - name: Retry PR on transient failure
         if: failure() && steps.collect.outputs.files_found != ''
         run: |
           echo "PR creation failed — retrying with git + gh cli"
           cd "$GITHUB_WORKSPACE"
-          git checkout -B "results/${{ env.PROJECT_NAME }}"
+          git checkout -B "results/${{ github.event.inputs.project_name }}"
 
           # Re-collect (the failed action may have left the worktree dirty)
-          SRC=".otel-eval/${{ env.PROJECT_NAME }}"
-          DST="results/${{ env.PROJECT_NAME }}"
+          SRC=".otel-eval/${{ github.event.inputs.project_name }}"
+          DST="results/${{ github.event.inputs.project_name }}"
           rm -rf "$DST"
           mkdir -p "$DST"
           cp -r "$SRC"/. "$DST"/
 
-          git add "results/${{ env.PROJECT_NAME }}/"
+          git add "results/${{ github.event.inputs.project_name }}/"
           git -c user.name="github-actions[bot]" \
               -c user.email="github-actions[bot]@users.noreply.github.com" \
-              commit -m "results: add OTel maturity evaluation for ${{ env.PROJECT_NAME }}" || true
+              commit -m "results: add OTel maturity evaluation for ${{ github.event.inputs.project_name }}" || true
 
           for attempt in 1 2 3; do
             echo "Push attempt ${attempt}/3..."
-            if git push -f origin "results/${{ env.PROJECT_NAME }}" 2>&1; then
+            if git push -f origin "results/${{ github.event.inputs.project_name }}" 2>&1; then
               break
             fi
             echo "Push failed — waiting 10s before retry"
             sleep 10
           done
 
-          EXISTING=$(gh pr list --head "results/${{ env.PROJECT_NAME }}" --json number --jq '.[0].number' 2>/dev/null || true)
+          EXISTING=$(gh pr list --head "results/${{ github.event.inputs.project_name }}" --json number --jq '.[0].number' 2>/dev/null || true)
           if [[ -z "$EXISTING" ]]; then
             gh pr create \
-              --title "OTel maturity report: ${{ env.PROJECT_NAME }}" \
+              --title "OTel maturity report: ${{ github.event.inputs.project_name }}" \
               --body "$(cat <<'BODY'
-          Automated OTel maturity evaluation for [${{ env.PROJECT_NAME }}](${{ github.event.inputs.project_url }}).
+          Automated OTel maturity evaluation for [${{ github.event.inputs.project_name }}](${{ github.event.inputs.project_url }}).
 
           ## Included files
           - `report.html` — interactive radar chart report
@@ -214,7 +213,7 @@ jobs:
           BODY
           )" \
               --base main \
-              --head "results/${{ env.PROJECT_NAME }}"
+              --head "results/${{ github.event.inputs.project_name }}"
           else
             echo "PR #${EXISTING} already exists"
           fi

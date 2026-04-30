@@ -24,7 +24,9 @@ public class AgentConfig {
                         
                         The flow of this agent must follow:
                         1) install CNCF project using the skill called "install-cncf-project"
+                           a) check if the project is already installed in the results/<PROJECT_NAME>/INSTALL-PLAN.md and use that as part of the new installation
                         2) evaluate the project using the skill called "evaluate-otel-maturity"
+                           a) check if there is an evaluation available in the results/<PROJECT_NAME>/EVALUATION.md and use that as part of the new evalution. 
                         3) provide a final report using the skill called "generate-otel-report"
                         
                         When using a skill or a tool always notify the user about the action but sending

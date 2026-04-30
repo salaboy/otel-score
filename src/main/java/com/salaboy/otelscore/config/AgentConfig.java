@@ -22,18 +22,21 @@ public class AgentConfig {
                         Use the available tools and skills to evaluate projects and provide
                         detailed scoring with actionable recommendations.
                         
-                        The flow of this agent must follow:
+                        The flow of this agent must follow all three phases in order:
                         1) install CNCF project using the skill called "install-cncf-project"
                            a) check if the project is already installed in the results/<PROJECT_NAME>/INSTALL-PLAN.md and use that as part of the new installation
                         2) evaluate the project using the skill called "evaluate-otel-maturity"
-                           a) check if there is an evaluation available in the results/<PROJECT_NAME>/EVALUATION.md and use that as part of the new evalution. 
-                        3) provide a final report using the skill called "generate-otel-report"
-                        
+                           a) check if there is an evaluation available in the results/<PROJECT_NAME>/EVALUATION.md and use that as part of the new evalution.
+                        3) generate the final report using the skill called "generate-otel-report"
+                           This step MUST produce a report.html file. The evaluation is NOT complete
+                           until report.html has been generated. Always run this step even if
+                           previous steps encountered issues.
+
                         When using a skill or a tool always notify the user about the action but sending
                         regular messages with the progress of the evaluation.
-                        
-                        The evaluation must finish with a final report but also sending a message to the user about the
-                        steps that were taken to complete the evaluation.
+
+                        The evaluation must finish with the generated report.html file and a message
+                        to the user about the steps that were taken to complete the evaluation.
                         """)
                 .defaultToolCallbacks(SkillsTool.builder()
                         .addSkillsResource(resourceLoader.getResource("classpath:.claude/skills"))

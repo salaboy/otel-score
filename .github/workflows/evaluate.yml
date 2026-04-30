@@ -86,9 +86,11 @@ jobs:
       # ── Trigger evaluation ───────────────────────────────────────────────
 
       - name: Run evaluation
+        id: evaluation
+        continue-on-error: true
         run: |
           echo "Evaluating: ${{ github.event.inputs.project_url }}"
-          curl -fsS -N -X POST http://localhost:8080/api/chat \
+          curl -sS -N -X POST http://localhost:8080/api/chat \
             -H "Content-Type: application/json" \
             -H "Accept: text/event-stream" \
             -d "{\"conversationId\": \"eval-${{ github.event.inputs.project_name }}\", \"clusterName\": \"otel-eval-${{ github.event.inputs.project_name }}\", \"projectName\": \"${{ github.event.inputs.project_name }}\", \"projectUrl\": \"${{ github.event.inputs.project_url }}\", \"message\": \"The kind cluster otel-eval-${{ github.event.inputs.project_name }} is already running with the OTel Collector and test backend deployed. Go straight to install the project, evaluate its OTel maturity, and generate the report.\"}" \
@@ -131,16 +133,17 @@ jobs:
       # ── Open PR with results ─────────────────────────────────────────────
 
       - name: Collect results for PR
+        if: always()
         id: collect
         run: |
           SRC=".otel-eval/${{ github.event.inputs.project_name }}"
           DST="results/${{ github.event.inputs.project_name }}"
 
           if [[ ! -d "$SRC" ]] || [[ -z "$(ls -A "$SRC" 2>/dev/null)" ]]; then
-            echo "ERROR: no evaluation files were generated at $SRC"
+            echo "WARNING: no evaluation files were generated at $SRC"
             echo "── Container logs (last 50 lines):"
             docker logs otel-score --tail=50 2>/dev/null || true
-            exit 1
+            exit 0
           fi
 
           mkdir -p "$DST"
@@ -151,15 +154,18 @@ jobs:
           echo "files_found=1" >> "$GITHUB_OUTPUT"
 
       - name: Create pull request with results
+        if: always() && steps.collect.outputs.files_found == '1'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: results/${{ github.event.inputs.project_name }}
           base: main
           commit-message: "results: add OTel maturity evaluation for ${{ github.event.inputs.project_name }}"
-          title: "OTel maturity report: ${{ github.event.inputs.project_name }}"
+          title: "OTel maturity report: ${{ github.event.inputs.project_name }}${{ steps.evaluation.outcome == 'failure' && ' (incomplete)' || '' }}"
           body: |
             Automated OTel maturity evaluation for [${{ github.event.inputs.project_name }}](${{ github.event.inputs.project_url }}).
+
+            **Status:** ${{ steps.evaluation.outcome == 'success' && 'Completed' || 'Incomplete — the evaluation did not finish. The files included can be reused for another evaluation run.' }}
 
             All files from the `.otel-eval/${{ github.event.inputs.project_name }}/` evaluation directory are included.
 
@@ -167,7 +173,7 @@ jobs:
           add-paths: results/${{ github.event.inputs.project_name }}/*
 
       - name: Retry PR on transient failure
-        if: failure() && steps.collect.outputs.files_found != ''
+        if: failure() && steps.collect.outputs.files_found == '1'
         run: |
           echo "PR creation failed — retrying with git + gh cli"
           cd "$GITHUB_WORKSPACE"

@@ -66,6 +66,7 @@ jobs:
             -e DASH0_DATASET="${DASH0_DATASET}" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /tmp:/tmp \
+            -v ${{ github.workspace }}/results:/app/results:ro \
             ghcr.io/${{ github.repository }}:latest
 
       - name: Wait for otel-score to be ready

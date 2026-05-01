@@ -12,6 +12,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
@@ -38,14 +42,34 @@ public class ChatController {
                 .append(request.projectName())
                 .append(" (").append(request.projectUrl()).append(").\n");
 
-
-        userPrompt.append("Check if a previous installation run exists at: ")
-                .append("results/").append(request.projectName())
-                .append(". Review the installation steps in ")
-                .append("results/")
-                .append(request.projectName())
-                .append("/INSTALL-PLAN.md before proceeding.\n");
-
+        // Check if previous results exist on the filesystem
+        Path resultsDir = Path.of("results", request.projectName());
+        if (Files.isDirectory(resultsDir)) {
+            userPrompt.append("A previous evaluation run exists at: ")
+                    .append(resultsDir).append("/\n");
+            userPrompt.append("The following files are available from the previous run:\n");
+            try (var files = Files.walk(resultsDir, 1)) {
+                files.filter(Files::isRegularFile).forEach(file ->
+                        userPrompt.append("- ").append(resultsDir).append("/")
+                                .append(file.getFileName()).append("\n"));
+            } catch (IOException e) {
+                userPrompt.append("(could not list files: ").append(e.getMessage()).append(")\n");
+            }
+            Path installPlan = resultsDir.resolve("INSTALL-PLAN.md");
+            if (Files.isRegularFile(installPlan)) {
+                userPrompt.append("Review the installation steps in ")
+                        .append(installPlan)
+                        .append(" before proceeding and use them as the basis for the new installation.\n");
+            }
+            Path evaluation = resultsDir.resolve("EVALUATION.md");
+            if (Files.isRegularFile(evaluation)) {
+                userPrompt.append("Review the previous evaluation in ")
+                        .append(evaluation)
+                        .append(" and use it as reference for the new evaluation.\n");
+            }
+        } else {
+            userPrompt.append("No previous evaluation exists for this project.\n");
+        }
 
         userPrompt.append(request.message());
 

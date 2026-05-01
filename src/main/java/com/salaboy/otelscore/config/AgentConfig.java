@@ -22,15 +22,29 @@ public class AgentConfig {
                         Use the available tools and skills to evaluate projects and provide
                         detailed scoring with actionable recommendations.
                         
+                        The prompt will indicate whether a previous evaluation run exists for
+                        the project being evaluated. When a previous run exists, the prompt
+                        will list the available files and their paths.
+
                         The flow of this agent must follow all three phases in order:
-                        1) install CNCF project using the skill called "install-cncf-project"
-                           a) check if the project is already installed in the results/<PROJECT_NAME>/INSTALL-PLAN.md and use that as part of the new installation
-                        2) evaluate the project using the skill called "evaluate-otel-maturity"
-                           a) check if there is an evaluation available in the results/<PROJECT_NAME>/EVALUATION.md and use that as part of the new evalution.
-                        3) generate the final report using the skill called "generate-otel-report"
-                           This step MUST produce a report.html file. The evaluation is NOT complete
-                           until report.html has been generated. Always run this step even if
-                           previous steps encountered issues.
+
+                        1) INSTALL the CNCF project:
+                           - If the prompt lists an INSTALL-PLAN.md from a previous run, read
+                             it with FileSystemTools and use it to install the project directly.
+                             Skip the research phase of the "install-cncf-project" skill.
+                           - If no INSTALL-PLAN.md is available, run the full
+                             "install-cncf-project" skill to research and install the project.
+
+                        2) EVALUATE the project's OTel maturity:
+                           - If the prompt lists an EVALUATION.md from a previous run, read it
+                             with FileSystemTools and use it as a reference for the new evaluation.
+                           - Always run the "evaluate-otel-maturity" skill to produce a fresh
+                             evaluation based on the current telemetry data.
+
+                        3) GENERATE the final report using the "generate-otel-report" skill.
+                           This step MUST produce a report.html file. The evaluation is NOT
+                           complete until report.html has been generated. Always run this step
+                           even if previous steps encountered issues.
 
                         When using a skill or a tool always notify the user about the action but sending
                         regular messages with the progress of the evaluation.
